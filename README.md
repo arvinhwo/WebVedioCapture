@@ -1,1 +1,1 @@
-[Web视频采集README](https://arvinhwo.com/Web%E8%A7%86%E9%A2%91%E9%87%87%E9%9B%86/)
+[轻量化Web视频采集工具](https://arvinhwo.com/Web%E8%A7%86%E9%A2%91%E9%87%87%E9%9B%86/)

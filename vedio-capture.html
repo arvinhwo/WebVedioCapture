@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Capture</title>
+    <style>
+        /* 统一美术风格 */
+        :root {
+            --primary: #165DFF;
+            --primary-hover: #0E4BD8;
+            --success: #00B42A;
+            --info: #86909C;
+            --hardware: #722ED1;
+            --bg: #F7F8FA;
+            --card-bg: #FFFFFF;
+            --border: #E5E6EB;
+            --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            --radius: 12px;
+            --gap-lg: 24px;
+            --gap-md: 16px;
+            --gap-sm: 8px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; 
+            background-color: var(--bg);
+            min-height: 100vh;
+            padding: 0;
+            overflow: hidden; /* 禁止页面整体滚动 */
+        }
+
+        /* 主容器：固定位置+尺寸，作为定位基准 */
+        .main-wrapper {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            padding: var(--gap-lg);
+        }
+
+        /* 视频卡片：修正宽度计算+调整层叠顺序，避免被遮挡 */
+        .video-card {
+            position: absolute;
+            top: var(--gap-lg);
+            left: var(--gap-lg);
+            width: calc(75% - var(--gap-lg)); 
+            height: calc(100vh - 2*var(--gap-lg)); 
+            background-color: var(--card-bg);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            z-index: 1; 
+        }
+        #videoPlayer { 
+            width: 100%; 
+            height: 100%;
+            border-radius: var(--radius);
+            object-fit: contain; 
+        }
+
+        /* 日志卡片：修正位置和宽度，彻底避免遮挡 */
+        .log-card {
+            position: absolute;
+            top: var(--gap-lg); 
+            left: calc(75% + var(--gap-lg)/2); 
+            right: var(--gap-lg); 
+            width: auto; 
+            height: calc(100vh - 2*var(--gap-lg)); 
+            background-color: var(--card-bg);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            padding: var(--gap-md);
+            display: flex;
+            flex-direction: column;
+            z-index: 2; 
+        }
+
+        /* 日志头部：固定高度，不压缩 */
+        .log-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--gap-sm);
+            margin-bottom: var(--gap-md);
+            padding-bottom: var(--gap-md);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0; 
+            flex-wrap: wrap; 
+        }
+        .log-card-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1D2129;
+            display: flex;
+            align-items: center;
+            gap: var(--gap-sm);
+        }
+
+        /* 按钮样式 */
+        .btn {
+            padding: 9px 18px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary);
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(22, 93, 255, 0.2);
+            margin: 0 4px; 
+        }
+        .btn:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+        }
+
+        /* 切换摄像头按钮样式区分 */
+        .btn-switch {
+            background-color: var(--hardware);
+        }
+        .btn-switch:hover {
+            background-color: #6225B8;
+        }
+
+        /* 设备选择弹窗样式 */
+        .device-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: var(--card-bg);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            padding: var(--gap-md);
+            z-index: 99999;
+            min-width: 300px;
+            display: none;
+        }
+        .device-modal.active {
+            display: block;
+        }
+        .device-modal-header {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: var(--gap-md);
+            padding-bottom: var(--gap-sm);
+            border-bottom: 1px solid var(--border);
+        }
+        .device-list {
+            list-style: none;
+            margin-bottom: var(--gap-md);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .device-item {
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: background-color 0.2s;
+        }
+        .device-item:hover {
+            background-color: #ECF5FF;
+        }
+        .device-item.active {
+            background-color: #ECF5FF;
+            color: var(--primary);
+            font-weight: 500;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: var(--gap-sm);
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 99998;
+            display: none;
+        }
+        .modal-overlay.active {
+            display: block;
+        }
+
+        /* 日志内容区：强制内部滚动，高度自适应剩余空间 */
+        .log-container {
+            flex: 1; 
+            overflow-y: auto; 
+            display: flex;
+            flex-direction: column;
+            gap: var(--gap-sm);
+            padding-right: var(--gap-sm);
+            min-height: 0; 
+        }
+        .log-item {
+            padding: 12px 14px;
+            border-radius: 8px;
+            display: flex;
+            gap: var(--gap-sm);
+            align-items: center;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .log-item:hover {
+            background: rgba(0,0,0,0.02);
+        }
+        .log-tag {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            min-width: 56px;
+            text-align: center;
+        }
+        .tag-info { background: #F2F3F5; color: var(--info); }
+        .tag-success { background: #E9FFF2; color: var(--success); }
+        .tag-hardware { background: #F5F0FF; color: var(--hardware); }
+        .log-time {
+            color: #4E5969;
+            min-width: 80px;
+            font-size: 12px;
+        }
+        .log-content {
+            flex: 1;
+            color: #1D2129;
+        }
+
+        /* 全屏容器 */
+        .fullscreen-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .fullscreen-container.active {
+            display: flex;
+        }
+        .fullscreen-container #videoPlayer {
+            border-radius: 0;
+        }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #F2F3F5;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #E5E6EB;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--info);
+        }
+
+        /* 响应式适配（小屏） */
+        @media (max-width: 1024px) {
+            .video-card, .log-card {
+                position: static;
+                width: 100%;
+                height: auto;
+                margin-bottom: var(--gap-lg);
+                left: auto;
+                right: auto;
+            }
+            .main-wrapper {
+                position: static;
+                padding: var(--gap-md);
+                height: auto;
+                overflow: auto;
+            }
+            .video-card {
+                min-height: 400px;
+            }
+            .log-card {
+                max-height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="video-card">
+            <video id="videoPlayer" autoplay playsinline muted></video>
+        </div>
+
+        <div class="log-card">
+            <div class="log-card-header">
+                <h2 class="log-card-title">Video Capture</h2>
+                <div class="btn-group">
+                    <button class="btn btn-switch" id="switchDeviceBtn">切换摄像头</button>
+                    <button class="btn" id="fullscreenBtn">网页全屏播放</button>
+                </div>
+            </div>
+            <div class="log-container" id="logPanel"></div>
+        </div>
+    </div>
+
+    <div class="fullscreen-container" id="fullscreenContainer"></div>
+
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="device-modal" id="deviceModal">
+        <div class="device-modal-header">选择视频输入设备</div>
+        <ul class="device-list" id="deviceList"></ul>
+        <div class="modal-footer">
+            <button class="btn" id="closeModalBtn">取消</button>
+        </div>
+    </div>
+
+    <script>
+        let currentStream = null;
+        let currentDeviceId = null;
+        const videoPlayer = document.getElementById('videoPlayer');
+        const logPanel = document.getElementById('logPanel');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const fullscreenContainer = document.getElementById('fullscreenContainer');
+        const videoCard = document.querySelector('.video-card');
+        const switchDeviceBtn = document.getElementById('switchDeviceBtn');
+        const deviceModal = document.getElementById('deviceModal');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const deviceList = document.getElementById('deviceList');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        
+        let isFullscreen = false;
+        let escHandler = null;
+
+        // 日志生成函数
+        function log(content, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const tagMap = {
+                info: { text: '信息', class: 'tag-info' },
+                success: { text: '成功', class: 'tag-success' },
+                hardware: { text: '硬件', class: 'tag-hardware' }
+            };
+            const tag = tagMap[type];
+
+            const logItem = document.createElement('div');
+            logItem.className = 'log-item';
+            logItem.innerHTML = `
+                <span class="log-tag ${tag.class}">${tag.text}</span>
+                <span class="log-time">[${time}]</span>
+                <span class="log-content">${content}</span>
+            `;
+            logPanel.appendChild(logItem);
+            logPanel.scrollTop = logPanel.scrollHeight;
+        }
+
+        // 获取所有可用视频设备
+        async function getVideoDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                log(`检测到 ${videoDevices.length} 个视频输入设备`, 'hardware');
+                return videoDevices;
+            } catch (e) {
+                log(`获取设备列表失败：${e.name} - ${e.message}`, 'info');
+                return [];
+            }
+        }
+
+        // 渲染设备列表
+        async function renderDeviceList() {
+            const devices = await getVideoDevices();
+            deviceList.innerHTML = '';
+
+            if (devices.length === 0) {
+                const emptyItem = document.createElement('li');
+                emptyItem.className = 'device-item';
+                emptyItem.textContent = '未检测到视频输入设备';
+                emptyItem.style.cursor = 'default';
+                emptyItem.style.color = '#86909C';
+                deviceList.appendChild(emptyItem);
+                return;
+            }
+
+            devices.forEach(device => {
+                const item = document.createElement('li');
+                item.className = 'device-item';
+                item.textContent = device.label || `摄像头 (${device.deviceId.substring(0, 8)}...)`;
+                item.dataset.deviceId = device.deviceId;
+
+                if (device.deviceId === currentDeviceId) {
+                    item.classList.add('active');
+                }
+
+                item.addEventListener('click', async () => {
+                    await switchToDevice(device.deviceId);
+                    closeDeviceModal();
+                });
+
+                deviceList.appendChild(item);
+            });
+        }
+
+        // 切换到指定设备（宽松约束，适配更多设备）
+        async function switchToDevice(deviceId) {
+            // 停止当前流
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                log('已停止当前视频流', 'info');
+            }
+
+            currentDeviceId = deviceId;
+            log(`正在切换到设备：${deviceId.substring(0, 8)}...`, 'info');
+
+            try {
+                // 宽松约束：只保留理想值，不限制最大值/比例/像素格式
+                const constraints = {
+                    video: {
+                        deviceId: { exact: deviceId },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 60 }
+                    },
+                    audio: false
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                videoPlayer.srcObject = stream;
+
+                const track = stream.getVideoTracks()[0];
+                const actual = track.getSettings();
+                log(`设备切换成功：${actual.width}x${actual.height} @ ${actual.frameRate || '未知'}Hz`, 'success');
+
+            } catch (e) {
+                //log(`设备切换失败：${e.name} - ${e.message}`, 'info');
+                currentDeviceId = null;
+                // 切换失败后用宽松约束重新初始化
+                initCapture();
+            }
+        }
+
+        // 打开设备选择弹窗（增加权限提示）
+        function openDeviceModal() {
+            log('即将打开设备选择弹窗，切换设备可能需要重新授权摄像头权限（浏览器安全策略）', 'info');
+            renderDeviceList();
+            deviceModal.classList.add('active');
+            modalOverlay.classList.add('active');
+            
+            // 弹窗ESC关闭
+            const modalEscHandler = (e) => {
+                if (e.key === 'Escape') {
+                    closeDeviceModal();
+                    document.removeEventListener('keydown', modalEscHandler);
+                }
+            };
+            document.addEventListener('keydown', modalEscHandler);
+        }
+
+        // 关闭设备选择弹窗
+        function closeDeviceModal() {
+            deviceModal.classList.remove('active');
+            modalOverlay.classList.remove('active');
+        }
+
+        // 初始化视频采集（宽松约束，提升兼容性）
+        async function initCapture() {
+            log('开始初始化视频采集...', 'info');
+            try {
+                // 宽松约束：适配大多数设备
+                const constraints = {
+                    video: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 60 }
+                    },
+                    audio: false
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                videoPlayer.srcObject = stream;
+
+                // 记录当前设备ID
+                const track = stream.getVideoTracks()[0];
+                currentDeviceId = track.getSettings().deviceId;
+
+                const supported = track.getCapabilities();
+                const actual = track.getSettings();
+
+                log(`硬件支持：分辨率 ${supported.width?.min || '未知'}~${supported.width?.max || '未知'}, 帧率 ${supported.frameRate?.min || '未知'}~${supported.frameRate?.max || '未知'}Hz`, 'hardware');
+                log(`当前配置：${actual.width}x${actual.height} @ ${actual.frameRate || '未知'}Hz`, 'success');
+                log(`当前使用设备：${currentDeviceId.substring(0, 8)}...`, 'hardware');
+
+            } catch (e) {
+                log(`初始化失败：${e.name} - ${e.message}`, 'info');
+                // 终极兜底：仅保留video: true，适配所有设备
+                await initCaptureWithMinConstraints();
+            }
+        }
+
+        // 最小约束初始化（终极兜底）
+        async function initCaptureWithMinConstraints() {
+            log('尝试使用最小约束初始化视频采集（适配所有设备）...', 'info');
+            try {
+                const constraints = {
+                    video: true,
+                    audio: false
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                videoPlayer.srcObject = stream;
+
+                const track = stream.getVideoTracks()[0];
+                currentDeviceId = track.getSettings().deviceId;
+                const actual = track.getSettings();
+
+                log(`最小约束初始化成功：${actual.width}x${actual.height} @ ${actual.frameRate || '未知'}Hz`, 'success');
+            } catch (e) {
+                log(`所有初始化方式均失败：${e.name} - ${e.message}`, 'info');
+                log('请检查：1.摄像头是否正常 2.浏览器是否授权摄像头权限 3.是否有其他程序占用摄像头', 'info');
+            }
+        }
+
+        // 全屏切换逻辑
+        function toggleFullscreen() {
+            if (!isFullscreen) {
+                videoCard.removeChild(videoPlayer);
+                fullscreenContainer.appendChild(videoPlayer);
+                fullscreenContainer.classList.add('active');
+                isFullscreen = true;
+                log('已进入网页全屏模式（按ESC退出）', 'info');
+
+                escHandler = (e) => {
+                    if (e.key === 'Escape') exitFullscreen();
+                };
+                document.addEventListener('keydown', escHandler);
+            } else {
+                exitFullscreen();
+            }
+        }
+
+        // 退出全屏
+        function exitFullscreen() {
+            fullscreenContainer.removeChild(videoPlayer);
+            videoCard.appendChild(videoPlayer);
+            fullscreenContainer.classList.remove('active');
+            isFullscreen = false;
+            log('已退出网页全屏模式', 'info');
+            document.removeEventListener('keydown', escHandler);
+        }
+
+        // 绑定事件
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        switchDeviceBtn.addEventListener('click', openDeviceModal);
+        closeModalBtn.addEventListener('click', closeDeviceModal);
+        modalOverlay.addEventListener('click', closeDeviceModal);
+        window.onload = initCapture;
+        
+        // 页面关闭时停止视频流
+        window.onbeforeunload = () => {
+            currentStream?.getTracks().forEach(track => track.stop());
+            if (isFullscreen) exitFullscreen();
+        };
+    </script>
+</body>
+</html>
